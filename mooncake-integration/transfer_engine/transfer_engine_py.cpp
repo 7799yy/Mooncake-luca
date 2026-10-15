@@ -111,12 +111,12 @@ int TransferEnginePy::initializeExt(const char *local_hostname,
                                     const char *protocol,
                                     const char *device_name,
                                     const char *metadata_type) {
-    (void)(protocol);
+    const bool use_luca = protocol && std::string(protocol) == "luca";
     std::string conn_string = buildConnString(metadata_type, metadata_server);
 
     auto device_name_safe = device_name ? std::string(device_name) : "";
     auto device_filter = buildDeviceFilter(device_name_safe);
-    engine_ = std::make_unique<TransferEngine>(true, device_filter);
+    engine_ = std::make_unique<TransferEngine>(!use_luca, device_filter);
     if (getenv("MC_LEGACY_RPC_PORT_BINDING")) {
         auto hostname_port = parseHostNameWithPort(local_hostname);
         int ret =
@@ -129,10 +129,18 @@ int TransferEnginePy::initializeExt(const char *local_hostname,
         if (ret) return -1;
     }
 
+    if (use_luca) {
+        xport_ = engine_->installTransport("luca", nullptr);
+        if (!xport_) {
+            LOG(ERROR) << "Python engine: LucaTransport install failed";
+            return -1;
+        }
+        LOG(INFO) << "Python engine: explicit LUCA Cross v2 transport";
+    }
     free_list_.resize(kSlabSizeKBTabLen);
 #if !defined(USE_ASCEND) && !defined(USE_ASCEND_DIRECT) && \
     !defined(USE_ASCEND_HETEROGENEOUS)
-    doBuddyAllocate(kMaxClassId);
+    if (!use_luca) doBuddyAllocate(kMaxClassId);
 #endif
     return 0;
 }
@@ -641,6 +649,11 @@ std::string TransferEnginePy::getLocalTopology() {
 namespace py = pybind11;
 
 PYBIND11_MODULE(engine, m) {
+#ifdef USE_LUCA
+    m.attr("luca_transport_enabled") = py::bool_(true);
+#else
+    m.attr("luca_transport_enabled") = py::bool_(false);
+#endif
     py::enum_<TransferEnginePy::TransferOpcode> transfer_opcode(
         m, "TransferOpcode", py::arithmetic());
     transfer_opcode.value("Read", TransferEnginePy::TransferOpcode::READ)

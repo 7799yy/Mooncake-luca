@@ -21,6 +21,9 @@
 #include "transport/tcp_transport/tcp_transport.h"
 #endif
 #include "transport/transport.h"
+#ifdef USE_LUCA
+#include "transport/luca_transport/luca_transport.h"
+#endif
 #ifdef USE_NVMEOF
 #include "transport/nvmeof_transport/nvmeof_transport.h"
 #endif
@@ -202,6 +205,11 @@ Transport *MultiTransport::installTransport(const std::string &proto,
     if (std::string(proto) == "rdma") {
         transport = new RdmaTransport();
     }
+#ifdef USE_LUCA
+    else if (std::string(proto) == "luca") {
+        transport = new LucaTransport();
+    }
+#endif
 #ifdef USE_TCP
     else if (std::string(proto) == "tcp") {
         transport = new TcpTransport();

@@ -1,5 +1,5 @@
 file(GLOB SOURCES "*.cpp")
-set(PYTHON_EXECUTABLE "python3")
+set(PYTHON_EXECUTABLE "/opt/conda/bin/python3.12")
 execute_process(
     COMMAND ${PYTHON_EXECUTABLE} -c "import sys; print([s for s in sys.path if 'packages' in s][0])"
     OUTPUT_VARIABLE PYTHON_SYS_PATH

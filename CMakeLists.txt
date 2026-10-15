@@ -7,6 +7,27 @@ set(GLOBAL_CONFIG "true")
 include(mooncake-common/FindJsonCpp.cmake)
 include(mooncake-common/FindGLOG.cmake)
 include(mooncake-common/common.cmake)
+
+# Experimental single-GPU-per-process LUCA Cross v2 transport.
+option(USE_LUCA "Build experimental LUCA Cross v2 transport" OFF)
+set(LUCA_ROOT "/opt/luca" CACHE PATH "LUCA native SDK root")
+if (USE_LUCA)
+  if (NOT USE_CUDA)
+    message(FATAL_ERROR "USE_LUCA requires USE_CUDA=ON for allocation-range queries")
+  endif()
+  if (USE_MNNVL OR USE_ASCEND OR USE_ASCEND_DIRECT OR USE_ASCEND_HETEROGENEOUS)
+    message(FATAL_ERROR "Experimental LUCA transport requires MNNVL/Ascend options OFF")
+  endif()
+  find_path(LUCA_NATIVE_INCLUDE_DIR lcr/lc_runtime_api.h
+            HINTS "${LUCA_ROOT}/include" NO_DEFAULT_PATH)
+  find_library(LUCA_NATIVE_LIBRARY NAMES lcruntime
+               HINTS "${LUCA_ROOT}/lib" "${LUCA_ROOT}/lib64" NO_DEFAULT_PATH)
+  if (NOT LUCA_NATIVE_INCLUDE_DIR OR NOT LUCA_NATIVE_LIBRARY)
+    message(FATAL_ERROR "LUCA native headers/library not found under LUCA_ROOT")
+  endif()
+  include_directories(${LUCA_NATIVE_INCLUDE_DIR})
+  add_compile_definitions(USE_LUCA)
+endif()
 # unit test
 if (BUILD_UNIT_TESTS)
   enable_testing()
@@ -17,7 +38,7 @@ option(WITH_P2P_STORE "build p2p store library and sample code" OFF)
 option(WITH_RUST_EXAMPLE "build the Rust interface and sample code for the transfer engine" OFF)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/pybind11)
-set(PYTHON_EXECUTABLE "python3")
+set(PYTHON_EXECUTABLE "/opt/conda/bin/python3.12")
 execute_process(
     COMMAND ${PYTHON_EXECUTABLE} -c "import sys; print(sys.path[-1])"
     OUTPUT_VARIABLE PYTHON_SYS_PATH
