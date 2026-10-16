@@ -9,7 +9,7 @@ include(mooncake-common/FindGLOG.cmake)
 include(mooncake-common/common.cmake)
 
 # Experimental single-GPU-per-process LUCA Cross v2 transport.
-option(USE_LUCA "Build experimental LUCA Cross v2 transport" OFF)
+option(USE_LUCA "Build MACA-derived asynchronous LUCA Cross v2 transport" OFF)
 set(LUCA_ROOT "/opt/luca" CACHE PATH "LUCA native SDK root")
 if (USE_LUCA)
   if (NOT USE_CUDA)

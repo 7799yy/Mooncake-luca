@@ -1,0 +1,22 @@
+// Host-test compatibility for MinGW builds without libstdc++ gthreads.
+// Normal Linux/MinGW POSIX builds use their standard library unchanged.
+#pragma once
+#include_next <mutex>
+#if defined(__MINGW32__) && !defined(_GLIBCXX_HAS_GTHREADS)
+#include <atomic>
+namespace std {
+class mutex {
+    atomic_flag flag_ = ATOMIC_FLAG_INIT;
+
+   public:
+    mutex() = default;
+    mutex(const mutex&) = delete;
+    mutex& operator=(const mutex&) = delete;
+    void lock() {
+        while (flag_.test_and_set(memory_order_acquire)) {
+        }
+    }
+    void unlock() { flag_.clear(memory_order_release); }
+};
+}  // namespace std
+#endif

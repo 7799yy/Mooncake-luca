@@ -198,6 +198,8 @@ class Transport {
         volatile bool is_finished = false;
         uint64_t total_bytes = 0;
         BatchID batch_id = 0;
+        // Backends that drive GPU completion from polling keep their owner here.
+        Transport *transport_ = nullptr;
 
         // record the origin request
 #ifdef USE_ASCEND_HETEROGENEOUS
@@ -250,6 +252,9 @@ class Transport {
     /// progress.
     virtual Status getTransferStatus(BatchID batch_id, size_t task_id,
                                      TransferStatus &status) = 0;
+
+    // Counter-driven backends retain the original MultiTransport status path.
+    virtual bool requiresStatusPolling() const { return false; }
 
     std::shared_ptr<TransferMetadata> &meta() { return metadata_; }
 

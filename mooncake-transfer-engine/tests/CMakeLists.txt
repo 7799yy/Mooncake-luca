@@ -53,3 +53,10 @@ add_test(NAME memory_location_test COMMAND memory_location_test)
 add_executable(common_test common_test.cpp)
 target_link_libraries(common_test PUBLIC transfer_engine gtest gtest_main)
 add_test(NAME common_test COMMAND common_test)
+
+if (USE_LUCA)
+    # Standalone CPU-only dependency-double tests; do not link the vendor SDK.
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(NAME luca_transport_mock_test
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/luca_mock/run_tests.py)
+endif()

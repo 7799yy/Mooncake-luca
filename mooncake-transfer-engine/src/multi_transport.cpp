@@ -87,23 +87,33 @@ Status MultiTransport::freeBatchID(BatchID batch_id) {
 Status MultiTransport::submitTransfer(
     BatchID batch_id, const std::vector<TransferRequest> &entries) {
     auto &batch_desc = *((BatchDesc *)(batch_id));
-    if (batch_desc.task_list.size() + entries.size() > batch_desc.batch_size) {
+    if (batch_desc.task_list.size() > batch_desc.batch_size ||
+        entries.size() > batch_desc.batch_size - batch_desc.task_list.size()) {
         return Status::TooManyRequests(
             "Exceed the limitation of batch capacity");
     }
 
+    // Resolve every route before publishing any new task into the batch.
+    std::vector<Transport *> transports;
+    transports.reserve(entries.size());
+    for (const auto &request : entries) {
+        Transport *transport = nullptr;
+        auto status = selectTransport(request, transport);
+        if (!status.ok()) return status;
+        transports.push_back(transport);
+    }
     size_t task_id = batch_desc.task_list.size();
     batch_desc.task_list.resize(task_id + entries.size());
 
     std::unordered_map<Transport *, std::vector<Transport::TransferTask *> >
         submit_tasks;
+    size_t request_id = 0;
     for (auto &request : entries) {
-        Transport *transport = nullptr;
-        auto status = selectTransport(request, transport);
-        if (!status.ok()) return status;
+        Transport *transport = transports[request_id++];
         assert(transport);
         auto &task = batch_desc.task_list[task_id];
         task.batch_id = batch_id;
+        task.transport_ = transport;
 #ifdef USE_ASCEND_HETEROGENEOUS
         task.request = const_cast<Transport::TransferRequest *>(&request);
 #else
@@ -132,6 +142,9 @@ Status MultiTransport::getTransferStatus(BatchID batch_id, size_t task_id,
         return Status::InvalidArgument("Task ID out of range");
     }
     auto &task = batch_desc.task_list[task_id];
+    if (task.transport_ && task.transport_->requiresStatusPolling()) {
+        return task.transport_->getTransferStatus(batch_id, task_id, status);
+    }
     status.transferred_bytes = task.transferred_bytes;
     uint64_t success_slice_count = task.success_slice_count;
     uint64_t failed_slice_count = task.failed_slice_count;
@@ -174,7 +187,13 @@ Status MultiTransport::getBatchTransferStatus(BatchID batch_id,
         return Status::OK();
     }
 
-    size_t success_count = 0;
+    bool polled_backend = false;
+    for (const auto &task : batch_desc.task_list) {
+        polled_backend |=
+            task.transport_ && task.transport_->requiresStatusPolling();
+    }
+    size_t success_count = 0, terminal_count = 0;
+    bool failed = false;
     for (size_t task_id = 0; task_id < task_count; task_id++) {
         TransferStatus task_status;
         auto ret = getTransferStatus(batch_id, task_id, task_status);
@@ -187,12 +206,23 @@ Status MultiTransport::getBatchTransferStatus(BatchID batch_id,
         if (task_status.s == Transport::TransferStatusEnum::COMPLETED) {
             status.transferred_bytes += task_status.transferred_bytes;
             success_count++;
+            terminal_count++;
         } else if (task_status.s == Transport::TransferStatusEnum::FAILED) {
-            status.s = Transport::TransferStatusEnum::FAILED;
-            return Status::OK();
+            failed = true;
+            terminal_count++;
+            if (!polled_backend) {
+                status.s = Transport::TransferStatusEnum::FAILED;
+                return Status::OK();
+            }
         }
     }
 
+    // Do not report a polled batch failed while another slice still uses GPU
+    // buffers. The synchronous Python wrapper attempts freeBatchID on failure.
+    if (failed && terminal_count == task_count) {
+        status.s = Transport::TransferStatusEnum::FAILED;
+        return Status::OK();
+    }
     status.s = (success_count == task_count)
                    ? Transport::TransferStatusEnum::COMPLETED
                    : Transport::TransferStatusEnum::WAITING;
@@ -253,6 +283,7 @@ Transport *MultiTransport::installTransport(const std::string &proto,
     }
 
     if (transport->install(local_server_name_, metadata_, topo)) {
+        delete transport;
         return nullptr;
     }
 
