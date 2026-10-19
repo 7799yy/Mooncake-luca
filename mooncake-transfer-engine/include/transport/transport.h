@@ -105,6 +105,7 @@ class Transport {
             } rdma;
             struct {
                 void *dest_addr;
+                void *cuda_stream;  // MACA async completion polling
             } local;
             struct {
                 uint64_t dest_addr;
@@ -198,6 +199,7 @@ class Transport {
         volatile bool is_finished = false;
         uint64_t total_bytes = 0;
         BatchID batch_id = 0;
+        Transport *transport_ = nullptr;  // Backported mother completion dispatch
 
         // record the origin request
 #ifdef USE_ASCEND_HETEROGENEOUS

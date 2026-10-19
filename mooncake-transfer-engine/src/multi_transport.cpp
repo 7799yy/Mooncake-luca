@@ -104,6 +104,7 @@ Status MultiTransport::submitTransfer(
         assert(transport);
         auto &task = batch_desc.task_list[task_id];
         task.batch_id = batch_id;
+        task.transport_ = transport;
 #ifdef USE_ASCEND_HETEROGENEOUS
         task.request = const_cast<Transport::TransferRequest *>(&request);
 #else
@@ -132,6 +133,13 @@ Status MultiTransport::getTransferStatus(BatchID batch_id, size_t task_id,
         return Status::InvalidArgument("Task ID out of range");
     }
     auto &task = batch_desc.task_list[task_id];
+    // Old-framework bridge: native mother transport updates counters when polled.
+    if (task.transport_) {
+        auto ret = task.transport_->getTransferStatus(batch_id, task_id, status);
+        if (!ret.ok()) return ret;
+        if (status.s != Transport::WAITING) return Status::OK();
+        // Preserve this base's generic timeout handling below.
+    }
     status.transferred_bytes = task.transferred_bytes;
     uint64_t success_slice_count = task.success_slice_count;
     uint64_t failed_slice_count = task.failed_slice_count;
